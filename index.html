@@ -21,7 +21,7 @@
       margin: 0;
     }
     #logo {
-      height: 48px; /* 20% smaller */
+      height: 48px;
       width: auto;
     }
     label {
@@ -71,30 +71,30 @@
     #currentUser {
       font-weight: bold;
     }
-
-    /* Scanner overlay styles */
-    #scanner-overlay {
-      position: fixed;
-      top: 0; left: 0; width: 100%; height: 100%;
-      background-color: rgba(0,0,0,0.8);
-      display: none;
-      z-index: 9999;
+    .dark-mode {
+      background-color: #111;
+      color: #eee;
     }
-    #scanner {
-      width: 100%;
-      height: 100%;
-      position: relative;
+    .dark-mode input, .dark-mode select, .dark-mode button {
+      background-color: #333;
+      color: white;
+      border: 1px solid #777;
     }
-    #closeScannerBtn {
-      position: absolute;
-      top: 10px; right: 10px;
-      z-index: 10000;
-      padding: 10px 15px;
-      background: white;
-      border: none;
-      font-weight: bold;
-      cursor: pointer;
-      border-radius: 4px;
+    @media (max-width: 600px) {
+      input, select, button {
+        font-size: 1em;
+        width: 100%;
+      }
+      table {
+        font-size: 0.8em;
+      }
+      header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      #logo {
+        margin-top: 10px;
+      }
     }
   </style>
 </head>
@@ -118,7 +118,7 @@
 
   <label for="barcode">Scan/Enter Barcode:</label>
   <input type="text" id="barcode" autocomplete="off" />
-  <button type="button" id="scanBtn">📷 Scan Barcode</button>
+  <button type="button" onclick="startScanner()">📷 Scan Barcode</button>
 
   <label for="weight">Weight (lbs):</label>
   <input type="number" id="weight" step="0.01" />
@@ -139,6 +139,11 @@
 
   <button onclick="submitEntry()">Submit</button>
   <button onclick="exportCSV()">Export CSV</button>
+  <button onclick="exportVisibleCSV()">Export Filtered CSV</button>
+  <button onclick="clearData()">Clear Data</button>
+  <button onclick="toggleDarkMode()">🌓 Toggle Dark Mode</button>
+
+  <input type="text" id="searchInput" placeholder="Search..." onkeyup="filterTable()" />
 
   <table id="logTable">
     <thead>
@@ -155,18 +160,19 @@
   </table>
 </div>
 
-<!-- Scanner overlay -->
-<div id="scanner-overlay">
-  <button id="closeScannerBtn">Close</button>
-  <div id="scanner"></div>
-</div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
 <script>
   let currentUser = '';
   let currentLocation = '';
   let selectedMetal = '';
   const dataLog = [];
+
+  window.onload = () => {
+    const savedData = localStorage.getItem("inventoryLog");
+    if (savedData) {
+      JSON.parse(savedData).forEach(row => appendRow(row));
+      dataLog.push(...JSON.parse(savedData));
+    }
+  };
 
   function login() {
     const userInput = document.getElementById("username").value.trim();
@@ -201,7 +207,14 @@
     const timestamp = new Date().toISOString();
     const row = [timestamp, currentUser, barcode, weight, metal, location];
     dataLog.push(row);
+    appendRow(row);
+    localStorage.setItem("inventoryLog", JSON.stringify(dataLog));
 
+    document.getElementById("barcode").value = '';
+    document.getElementById("weight").value = '';
+  }
+
+  function appendRow(row) {
     const tbody = document.getElementById("logTable").querySelector("tbody");
     const tr = document.createElement("tr");
     row.forEach(cell => {
@@ -210,9 +223,6 @@
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
-
-    document.getElementById("barcode").value = '';
-    document.getElementById("weight").value = '';
   }
 
   function exportCSV() {
@@ -220,7 +230,6 @@
     dataLog.forEach(row => {
       csv += row.join(",") + "\n";
     });
-
     const blob = new Blob([csv], { type: 'text/csv' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -228,48 +237,46 @@
     link.click();
   }
 
-  // Barcode Scanner logic using QuaggaJS
-  const scanBtn = document.getElementById("scanBtn");
-  const scannerOverlay = document.getElementById("scanner-overlay");
-  const closeScannerBtn = document.getElementById("closeScannerBtn");
-
-  scanBtn.addEventListener("click", () => {
-    scannerOverlay.style.display = "block";
-
-    Quagga.init({
-      inputStream: {
-        type : "LiveStream",
-        target: document.querySelector('#scanner'),
-        constraints: {
-          facingMode: "environment" // Use back camera
-        },
-      },
-      decoder: {
-        readers: ["code_128_reader","ean_reader","ean_8_reader","code_39_reader","upc_reader","upc_e_reader","codabar_reader"],
-      },
-      locate: true,
-    }, function(err) {
-      if (err) {
-        alert("Error initializing camera: " + err);
-        scannerOverlay.style.display = "none";
-        return;
-      }
-      Quagga.start();
-    });
-
-    Quagga.onDetected(function(result) {
-      if(result && result.codeResult && result.codeResult.code) {
-        document.getElementById("barcode").value = result.codeResult.code;
-        Quagga.stop();
-        scannerOverlay.style.display = "none";
+  function exportVisibleCSV() {
+    let csv = "Timestamp,User,Barcode,Weight,Metal,Location\n";
+    const rows = document.querySelectorAll("#logTable tbody tr");
+    rows.forEach(row => {
+      if (row.style.display !== "none") {
+        const cells = Array.from(row.cells).map(cell => cell.innerText);
+        csv += cells.join(",") + "\n";
       }
     });
-  });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "filtered_inventory_log.csv";
+    link.click();
+  }
 
-  closeScannerBtn.addEventListener("click", () => {
-    Quagga.stop();
-    scannerOverlay.style.display = "none";
-  });
+  function clearData() {
+    if (confirm("Are you sure you want to clear all saved entries?")) {
+      dataLog.length = 0;
+      localStorage.removeItem("inventoryLog");
+      document.querySelector("#logTable tbody").innerHTML = '';
+    }
+  }
+
+  function filterTable() {
+    const filter = document.getElementById("searchInput").value.toLowerCase();
+    const rows = document.querySelector("#logTable tbody").rows;
+    for (let row of rows) {
+      const text = row.innerText.toLowerCase();
+      row.style.display = text.includes(filter) ? '' : 'none';
+    }
+  }
+
+  function toggleDarkMode() {
+    document.body.classList.toggle("dark-mode");
+  }
+
+  function startScanner() {
+    alert("Scanner UI needs to be integrated. For now, enter barcode manually.");
+  }
 </script>
 
 </body>
