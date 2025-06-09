@@ -53,33 +53,43 @@
       background-color: #007bff;
       color: white;
     }
-    #reader {
-      margin-top: 10px;
-      width: 100%;
-      max-width: 400px;
+    .delete-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.3em;
+      color: #d22;
+      padding: 4px 8px;
+      border-radius: 2px;
+      transition: color 0.3s ease;
+    }
+    .delete-btn:hover {
+      color: #a00;
+    }
+    #scanner-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background-color: rgba(0,0,0,0.85);
       display: none;
+      z-index: 9999;
     }
-    video {
+    #scanner {
       width: 100%;
-      max-width: 400px;
+      height: 100%;
+      position: relative;
     }
-
-    /* Delete button styles */
-  .delete-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 1.3em;   /* slightly bigger for clarity */
-  color: #d22;        /* bright red */
-  padding: 4px 8px;
-  border-radius: 2px;
-  transition: color 0.3s ease;
-}
-
-.delete-btn:hover {
-  color: #a00; /* darker red on hover */
-}
-
+    #closeScannerBtn {
+      position: absolute;
+      top: 10px; right: 10px;
+      z-index: 10000;
+      padding: 10px 15px;
+      background: white;
+      border: none;
+      font-weight: bold;
+      cursor: pointer;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -102,11 +112,7 @@
 
   <label for="barcode">Scan or Enter Barcode:</label>
   <input type="text" id="barcode" />
-  <button type="button" onclick="startCamera()">📷 Start Scanner</button>
-  <button type="button" onclick="flipCamera()">🔄 Flip Camera</button>
-  <div id="reader">
-    <video id="video" autoplay playsinline muted></video>
-  </div>
+  <button type="button" id="scanBtn">📷 Start Scanner</button>
 
   <label>Metal Type:</label>
   <div id="metalButtons">
@@ -136,7 +142,7 @@
         <th>Weight</th>
         <th>Metal</th>
         <th>Location</th>
-        <!-- No action header -->
+        <th>Action</th>
       </tr>
     </thead>
     <tbody></tbody>
@@ -145,16 +151,18 @@
   <button onclick="exportToExcel()">Export to Excel</button>
 </div>
 
-<!-- SheetJS CDN -->
+<!-- Scanner overlay -->
+<div id="scanner-overlay">
+  <button id="closeScannerBtn">Close</button>
+  <div id="scanner"></div>
+</div>
+
+<!-- QuaggaJS and SheetJS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 <script>
-  let currentUser = '';
-  let selectedMetal = '';
-  let currentLocation = '';
-  const dataLog = [];
-  let cameraStream;
-  let facingMode = 'environment';
+  let currentUser = '', selectedMetal = '', currentLocation = '', dataLog = [];
 
   function login() {
     const name = document.getElementById("username").value.trim();
@@ -174,6 +182,18 @@
   function setLocation(val) {
     currentLocation = val;
   }
+
+  function extractWeight(barcode) {
+    const match = barcode.match(/^Q(\d{3,4}(\.\d{1,2})?)$/);
+    if (match) {
+      const weightStr = match[1];
+      document.getElementById("weight").value = parseFloat(weightStr);
+    }
+  }
+
+  document.getElementById("barcode").addEventListener("input", () => {
+    extractWeight(document.getElementById("barcode").value.trim());
+  });
 
   function submitEntry() {
     const barcode = document.getElementById("barcode").value.trim();
@@ -213,89 +233,63 @@
     document.querySelector("#logTable tbody").appendChild(tr);
   }
 
-  async function startCamera() {
-    try {
-      const video = document.getElementById("video");
-      if (cameraStream) {
-        cameraStream.getTracks().forEach(t => t.stop());
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facingMode }
-      });
-      cameraStream = stream;
-      video.srcObject = stream;
-      document.getElementById("reader").style.display = "block";
-      video.play();
-
-      if (!("BarcodeDetector" in window)) {
-        alert("BarcodeDetector API not supported in this browser.");
-        return;
-      }
-
-      const detector = new BarcodeDetector({ formats: ["code_128", "ean_13", "qr_code"] });
-      scanLoop(detector, video);
-    } catch (e) {
-      alert("Camera error: " + e.message);
-      console.error(e);
-    }
-  }
-
-  function flipCamera() {
-    facingMode = (facingMode === "environment") ? "user" : "environment";
-    startCamera();
-  }
-
-  function scanLoop(detector, video) {
-    detector.detect(video)
-      .then(codes => {
-        codes.forEach(code => {
-          const text = code.rawValue;
-          document.getElementById("barcode").value = text;
-          extractWeight(text);
-        });
-      })
-      .catch(err => {
-        console.error("Detect error:", err);
-      })
-      .finally(() => {
-        requestAnimationFrame(() => scanLoop(detector, video));
-      });
-  }
-
-  function extractWeight(barcode) {
-    const match = barcode.match(/^Q(\d{3,4}(\.\d{1,2})?)$/);
-    if (match) {
-      const weightStr = match[1];
-      document.getElementById("weight").value = parseFloat(weightStr);
-    }
-  }
-
-  document.getElementById("barcode").addEventListener("input", () => {
-    const val = document.getElementById("barcode").value.trim();
-    extractWeight(val);
-  });
-
   function exportToExcel() {
     if (dataLog.length === 0) {
       alert("No data to export!");
       return;
     }
-
-    // Prepare data array with headers
     const exportData = [
       ["Timestamp", "User", "Barcode", "Weight", "Metal", "Location"]
     ].concat(dataLog);
-
-    // Create worksheet
     const ws = XLSX.utils.aoa_to_sheet(exportData);
-    // Create workbook and append worksheet
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Inventory");
-
-    // Export as Excel file
     XLSX.writeFile(wb, `Inventory_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
+
+  // QuaggaJS Scanner Logic
+  const scanBtn = document.getElementById("scanBtn");
+  const scannerOverlay = document.getElementById("scanner-overlay");
+  const closeScannerBtn = document.getElementById("closeScannerBtn");
+
+  scanBtn.addEventListener("click", () => {
+    scannerOverlay.style.display = "block";
+    Quagga.init({
+      inputStream: {
+        type : "LiveStream",
+        target: document.querySelector('#scanner'),
+        constraints: {
+          facingMode: "environment"
+        }
+      },
+      decoder: {
+        readers: ["code_128_reader", "ean_reader", "ean_8_reader", "code_39_reader", "upc_reader", "upc_e_reader", "codabar_reader"]
+      },
+      locate: true
+    }, function(err) {
+      if (err) {
+        alert("Camera init error: " + err);
+        scannerOverlay.style.display = "none";
+        return;
+      }
+      Quagga.start();
+    });
+
+    Quagga.onDetected(function(result) {
+      if(result && result.codeResult && result.codeResult.code) {
+        const code = result.codeResult.code;
+        document.getElementById("barcode").value = code;
+        extractWeight(code);
+        Quagga.stop();
+        scannerOverlay.style.display = "none";
+      }
+    });
+  });
+
+  closeScannerBtn.addEventListener("click", () => {
+    Quagga.stop();
+    scannerOverlay.style.display = "none";
+  });
 </script>
 
 </body>
