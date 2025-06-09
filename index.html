@@ -184,12 +184,14 @@
   }
 
   function extractWeight(barcode) {
-    const match = barcode.match(/^Q(\d{3,4}(\.\d{1,2})?)$/);
-    if (match) {
-      const weightStr = match[1];
-      document.getElementById("weight").value = parseFloat(weightStr);
-    }
+  // Match Q followed by digits and optional commas, optional decimal part
+  const match = barcode.match(/^Q([\d,]+(\.\d{1,2})?)$/);
+  if (match) {
+    // Remove commas from number string before parsing
+    const weightStr = match[1].replace(/,/g, '');
+    document.getElementById("weight").value = parseFloat(weightStr);
   }
+}
 
   document.getElementById("barcode").addEventListener("input", () => {
     extractWeight(document.getElementById("barcode").value.trim());
