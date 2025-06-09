@@ -142,7 +142,7 @@
         <th>Weight</th>
         <th>Metal</th>
         <th>Location</th>
-        <th>Action</th>
+    
       </tr>
     </thead>
     <tbody></tbody>
@@ -202,7 +202,7 @@
       alert("Fill in all fields (except barcode is optional).");
       return;
     }
-    const row = [new Date().toISOString(), currentUser, barcode, weight, selectedMetal, currentLocation];
+    const row = [new Date().toISOString().slice(0,10), currentUser, barcode, weight, selectedMetal, currentLocation];
     dataLog.push(row);
     appendRow(row);
     document.getElementById("barcode").value = '';
